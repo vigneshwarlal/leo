@@ -1,0 +1,375 @@
+
+import bpy
+import math
+
+# ============================================================
+# TCE K.S. AUDITORIUM - PROCEDURAL BLENDER MODEL
+# Blender 3.6+ / Blender 4.x
+# All dimensions are approximate, in metres.
+# ============================================================
+
+# -------------------- RESET SCENE ----------------------------
+
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
+for datablocks in (
+    bpy.data.materials,
+    bpy.data.curves,
+    bpy.data.cameras,
+    bpy.data.lights,
+):
+    # Existing datablocks are harmless; new objects use new data.
+    pass
+
+# -------------------- MATERIALS ------------------------------
+
+def make_mat(name, color, metallic=0.0, roughness=0.65):
+    mat = bpy.data.materials.new(name)
+    mat.diffuse_color = (*color, 1)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    bsdf.inputs["Base Color"].default_value = (*color, 1)
+    bsdf.inputs["Metallic"].default_value = metallic
+    bsdf.inputs["Roughness"].default_value = roughness
+    return mat
+
+cream = make_mat("Warm ivory walls", (0.78, 0.72, 0.60))
+white = make_mat("Ceiling white", (0.88, 0.88, 0.84))
+floor_mat = make_mat("Auditorium carpet", (0.16, 0.12, 0.11))
+wood = make_mat("Dark teak wood", (0.25, 0.105, 0.045))
+wood_light = make_mat("Stage wood", (0.43, 0.23, 0.10))
+red = make_mat("Seat upholstery", (0.42, 0.025, 0.035))
+black = make_mat("Black metal", (0.035, 0.04, 0.045), 0.45)
+gold = make_mat("Gold lettering", (0.72, 0.43, 0.10), 0.45)
+screen_mat = make_mat("Projection screen", (0.82, 0.85, 0.82))
+glass = make_mat("Dark glass", (0.07, 0.12, 0.15), 0.25)
+light_mat = make_mat("Warm luminous panels", (1.0, 0.82, 0.53))
+
+# -------------------- PRIMITIVES -----------------------------
+
+def cube_obj(name, loc, scale, mat, bevel=0.0):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
+    obj = bpy.context.object
+    obj.name = name
+    obj.dimensions = scale
+    bpy.ops.object.transform_apply(
+        location=False, rotation=False, scale=True
+    )
+    if mat:
+        obj.data.materials.append(mat)
+    if bevel > 0:
+        mod = obj.modifiers.new("Soft edges", "BEVEL")
+        mod.width = bevel
+        mod.segments = 2
+    return obj
+
+def cylinder_obj(name, loc, radius, depth, mat,
+                 vertices=16, rotation=None):
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=vertices,
+        radius=radius,
+        depth=depth,
+        location=loc
+    )
+    obj = bpy.context.object
+    obj.name = name
+    if rotation:
+        obj.rotation_euler = rotation
+    if mat:
+        obj.data.materials.append(mat)
+    return obj
+
+def text_obj(body, loc, size, mat, rotation=(0, 0, 0)):
+    curve = bpy.data.curves.new("Text_" + body, "FONT")
+    curve.body = body
+    curve.size = size
+    curve.extrude = 0.003
+    obj = bpy.data.objects.new(body, curve)
+    bpy.context.collection.objects.link(obj)
+    obj.location = loc
+    obj.rotation_euler = rotation
+    obj.data.materials.append(mat)
+    return obj
+
+# -------------------- BUILDING SHELL -------------------------
+
+ROOM_W = 24.0
+ROOM_D = 20.0
+ROOM_H = 7.0
+WALL_T = 0.25
+
+# Floor
+cube_obj("Main auditorium floor",
+         (0, 0, -0.18), (ROOM_W, ROOM_D, 0.36),
+         floor_mat)
+
+# Back and side walls
+cube_obj("Rear wall",
+         (0, ROOM_D/2, ROOM_H/2),
+         (ROOM_W, WALL_T, ROOM_H), cream)
+
+cube_obj("Left wall",
+         (-ROOM_W/2, 0, ROOM_H/2),
+         (WALL_T, ROOM_D, ROOM_H), cream)
+
+cube_obj("Right wall",
+         (ROOM_W/2, 0, ROOM_H/2),
+         (WALL_T, ROOM_D, ROOM_H), cream)
+
+# Ceiling
+cube_obj("Ceiling",
+         (0, 0, ROOM_H),
+         (ROOM_W, ROOM_D, 0.30), white)
+
+# Decorative wall panels
+for side in (-1, 1):
+    x = side * (ROOM_W/2 - 0.15)
+    for y in (-5.5, -1.8, 1.9, 5.6):
+        cube_obj("Wall decorative panel",
+                 (x, y, 3.3), (0.10, 2.6, 3.8),
+                 wood)
+
+# Rear entrance doors (decorative representation)
+for x in (-3.0, 3.0):
+    cube_obj("Entrance door",
+             (x, ROOM_D/2 - 0.18, 1.55),
+             (1.65, 0.16, 3.1), wood, 0.04)
+    cube_obj("Door inset",
+             (x, ROOM_D/2 - 0.275, 1.65),
+             (1.32, 0.025, 2.55), wood_light, 0.02)
+    cylinder_obj("Door handle",
+                 (x + 0.52, ROOM_D/2 - 0.33, 1.45),
+                 0.045, 0.06, gold, rotation=(math.pi/2, 0, 0))
+
+# -------------------- STAGE ----------------------------------
+
+STAGE_W = 13.5
+STAGE_D = 3.2
+STAGE_Y = -7.0
+STAGE_Z = 0.42
+
+cube_obj("Raised stage",
+         (0, STAGE_Y, STAGE_Z/2),
+         (STAGE_W, STAGE_D, STAGE_Z),
+         wood_light, 0.08)
+
+# Stage front fascia
+cube_obj("Stage front fascia",
+         (0, STAGE_Y - STAGE_D/2 + 0.06, 0.20),
+         (STAGE_W, 0.12, 0.34), wood, 0.025)
+
+# Steps
+for i in range(3):
+    cube_obj("Stage step",
+             (0, STAGE_Y + STAGE_D/2 + 0.25 + i*0.25,
+              0.08 + i*0.12),
+             (4.2, 0.5, 0.16 + i*0.12),
+             wood_light, 0.025)
+
+# Backdrop and screen
+cube_obj("Stage backdrop",
+         (0, -8.95, 3.8), (14.0, 0.20, 4.6),
+         wood)
+
+cube_obj("Projection screen frame",
+         (0, -9.08, 4.4), (7.5, 0.12, 3.1),
+         black, 0.04)
+
+cube_obj("Projection screen",
+         (0, -9.16, 4.4), (7.15, 0.035, 2.75),
+         screen_mat)
+
+# Auditorium sign
+cube_obj("Auditorium sign board",
+         (0, -9.10, 6.1), (8.0, 0.10, 0.65),
+         wood)
+text_obj("K.S. AUDITORIUM",
+         (-3.15, -9.17, 5.98), 0.46, gold,
+         rotation=(math.pi/2, 0, 0))
+
+# Podium on stage
+cube_obj("Podium base",
+         (-4.0, -7.2, 1.05), (0.75, 0.55, 1.35),
+         wood, 0.05)
+cube_obj("Podium top",
+         (-4.0, -7.2, 1.76), (0.95, 0.65, 0.12),
+         wood_light, 0.03)
+
+# Microphone stem
+cylinder_obj("Microphone stem",
+             (-4.0, -7.0, 1.98), 0.025, 0.38,
+             black, rotation=(0.2, 0.15, 0))
+cylinder_obj("Microphone head",
+             (-4.0, -6.96, 2.18), 0.045, 0.12,
+             black, rotation=(math.pi/2, 0, 0))
+
+# Stage curtains, in two panels
+for x in (-5.5, 5.5):
+    cube_obj("Stage curtain",
+             (x, -8.72, 4.3), (2.0, 0.12, 3.6),
+             red)
+
+# -------------------- SEATING: 204 CHAIRS --------------------
+
+# 12 rows x 17 seats = 204 seats
+# Eight chairs on left, nine on right of the centre aisle.
+
+ROWS = 12
+SEATS_PER_ROW = 17
+SEAT_SPACING = 0.67
+ROW_SPACING = 0.78
+FIRST_ROW_Y = -4.35
+
+def create_chair(x, y, row, number):
+    # Individual seat
+    cube_obj(f"Seat_R{row:02d}_N{number:02d}",
+             (x, y, 0.78),
+             (0.51, 0.48, 0.14), red, 0.055)
+
+    # Backrest
+    cube_obj(f"Back_R{row:02d}_N{number:02d}",
+             (x, y + 0.19, 1.12),
+             (0.51, 0.13, 0.68), red, 0.055)
+
+    # Four supports
+    for dx in (-0.19, 0.19):
+        for dy in (-0.16, 0.16):
+            cube_obj("Chair metal support",
+                     (x + dx, y + dy, 0.42),
+                     (0.045, 0.045, 0.65), black)
+
+    # Armrests
+    for side in (-1, 1):
+        cube_obj("Chair armrest",
+                 (x + side*0.28, y, 0.98),
+                 (0.065, 0.42, 0.08), black, 0.025)
+
+for row in range(ROWS):
+    y = FIRST_ROW_Y + row * ROW_SPACING
+
+    # Left block: 8 chairs
+    for seat in range(8):
+        x = -6.2 + seat * SEAT_SPACING
+        create_chair(x, y, row+1, seat+1)
+
+    # Right block: 9 chairs
+    for seat in range(9):
+        x = 1.75 + seat * SEAT_SPACING
+        create_chair(x, y, row+1, seat+9)
+
+# -------------------- AISLES ---------------------------------
+
+# Central aisle runner
+cube_obj("Central aisle",
+         (0, 0.05, 0.012), (2.4, 11.0, 0.025),
+         make_mat("Aisle runner", (0.22, 0.10, 0.09)))
+
+# Side aisle markings
+for x in (-7.8, 7.8):
+    cube_obj("Side aisle",
+             (x, 0.0, 0.015), (1.1, 11.5, 0.03),
+             floor_mat)
+
+# Row-end lights
+for row in range(ROWS):
+    y = FIRST_ROW_Y + row * ROW_SPACING
+    for x in (-7.0, 7.7):
+        cube_obj("Aisle safety light",
+                 (x, y, 0.14), (0.13, 0.10, 0.08),
+                 light_mat)
+
+# -------------------- CEILING LIGHTS ------------------------
+
+def add_area_light(name, loc, power, size, color):
+    data = bpy.data.lights.new(name, type='AREA')
+    data.energy = power
+    data.shape = 'RECTANGLE'
+    data.size = size
+    data.size_y = 1.0
+    data.color = color
+    obj = bpy.data.objects.new(name, data)
+    bpy.context.collection.objects.link(obj)
+    obj.location = loc
+    obj.rotation_euler = (0, 0, 0)
+    return obj
+
+# Visible luminous ceiling panels
+for x in (-8, -4, 4, 8):
+    for y in (-5, -1, 3, 7):
+        cube_obj("Ceiling LED panel",
+                 (x, y, 6.78), (2.0, 0.75, 0.06),
+                 light_mat)
+        add_area_light("Ceiling light",
+                       (x, y, 6.65), 170, 2.0,
+                       (1.0, 0.83, 0.65))
+
+# Stage illumination
+for x in (-4.0, 0.0, 4.0):
+    add_area_light("Stage spotlight",
+                   (x, -6.4, 6.5), 350, 2.5,
+                   (1.0, 0.78, 0.55))
+
+# -------------------- AIR CONDITIONING DETAILS ---------------
+
+for x in (-8.0, 0.0, 8.0):
+    cube_obj("AC indoor unit",
+             (x, 9.72, 5.6), (2.0, 0.28, 0.5),
+             white, 0.08)
+    for i in range(8):
+        cube_obj("AC vent",
+                 (x - 0.75 + i*0.21, 9.55, 5.55),
+                 (0.035, 0.025, 0.24), black)
+
+# -------------------- CAMERAS --------------------------------
+
+def aim_at(obj, target):
+    direction = Vector(target) - obj.location
+    obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+
+from mathutils import Vector
+
+# Interior overview camera
+cam_data = bpy.data.cameras.new("Auditorium overview camera")
+cam = bpy.data.objects.new("Auditorium overview camera", cam_data)
+bpy.context.collection.objects.link(cam)
+cam.location = (13.5, 15.5, 11.0)
+aim_at(cam, (0, -1.2, 2.2))
+cam.data.lens = 25
+bpy.context.scene.camera = cam
+
+# -------------------- RENDER SETTINGS ------------------------
+
+scene = bpy.context.scene
+scene.render.engine = 'CYCLES'
+scene.cycles.samples = 32
+scene.render.resolution_x = 1600
+scene.render.resolution_y = 1000
+scene.render.resolution_percentage = 100
+
+scene.world.color = (0.16, 0.16, 0.16)
+
+# Set colour management
+scene.view_settings.view_transform = 'AgX'
+
+# Ambient fill light
+world = scene.world
+world.use_nodes = True
+world.node_tree.nodes["Background"].inputs[0].default_value = (
+    0.22, 0.22, 0.22, 1
+)
+world.node_tree.nodes["Background"].inputs[1].default_value = 0.35
+
+# Select nothing and frame the scene in the viewport
+bpy.ops.object.select_all(action='DESELECT')
+
+for area in bpy.context.screen.areas:
+    if area.type == 'VIEW_3D':
+        area.spaces.active.region_3d.view_distance = 29
+        area.spaces.active.region_3d.view_location = (
+            0, 0, 2
+        )
+
+print("K.S. AUDITORIUM MODEL CREATED SUCCESSFULLY")
+print("Nominal seating count: 204")
+print("Use F12 to render the auditorium.")
