@@ -1,0 +1,418 @@
+
+import bpy
+import math
+import random
+from mathutils import Vector
+
+# ==========================================
+# COLLEGE BUILDING - COMPLETE BLENDER SCRIPT
+# ==========================================
+
+random.seed(10)
+
+# Clear the scene
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
+# Materials
+def material(name, color, roughness=0.7, metallic=0):
+    m = bpy.data.materials.new(name)
+    m.diffuse_color = (*color, 1)
+    m.use_nodes = True
+    p = m.node_tree.nodes.get("Principled BSDF")
+    p.inputs["Base Color"].default_value = (*color, 1)
+    p.inputs["Roughness"].default_value = roughness
+    p.inputs["Metallic"].default_value = metallic
+    return m
+
+white = material("White concrete", (0.9, 0.89, 0.82))
+cream = material("Cream walls", (0.75, 0.72, 0.62))
+glass = material("Blue glass", (0.035, 0.22, 0.36), 0.2, 0.2)
+red = material("Red staircase", (0.48, 0.07, 0.06))
+red2 = material("Red step edges", (0.7, 0.16, 0.12))
+soil = material("Red earth", (0.32, 0.19, 0.10))
+stone = material("Sandstone", (0.69, 0.64, 0.54))
+green = material("Dark foliage", (0.10, 0.28, 0.055))
+green2 = material("Light foliage", (0.27, 0.42, 0.10))
+bark = material("Tree trunks", (0.22, 0.12, 0.06))
+metal = material("White railings", (0.92, 0.92, 0.86), 0.4, 0.15)
+dark = material("Recesses", (0.12, 0.15, 0.16))
+
+# Basic objects
+def cube(name, loc, size, mat, bevel=0):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.dimensions = size
+    bpy.ops.object.transform_apply(
+        location=False, rotation=False, scale=True
+    )
+    if mat:
+        o.data.materials.append(mat)
+    if bevel:
+        b = o.modifiers.new("Edge bevel", 'BEVEL')
+        b.width = bevel
+        b.segments = 2
+        o.modifiers.new("Weighted normals", 'WEIGHTED_NORMAL')
+    return o
+
+def sphere(name, loc, scale, mat):
+    bpy.ops.mesh.primitive_uv_sphere_add(
+        segments=12, ring_count=8, location=loc
+    )
+    o = bpy.context.object
+    o.name = name
+    o.scale = scale
+    o.data.materials.append(mat)
+    return o
+
+def beam(name, a, b, radius, mat):
+    a, b = Vector(a), Vector(b)
+    d = b - a
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=8, radius=radius, depth=d.length,
+        location=(a+b)/2
+    )
+    o = bpy.context.object
+    o.name = name
+    o.rotation_mode = 'QUATERNION'
+    o.rotation_quaternion = d.to_track_quat('Z', 'Y')
+    o.data.materials.append(mat)
+    return o
+
+def text_object(body, loc, size, mat):
+    c = bpy.data.curves.new("Sign text", 'FONT')
+    c.body = body
+    c.size = size
+    c.align_x = 'CENTER'
+    o = bpy.data.objects.new(body, c)
+    bpy.context.collection.objects.link(o)
+    o.location = loc
+    o.rotation_euler[0] = math.pi/2
+    c.extrude = 0.002
+    c.materials.append(mat)
+    return o
+
+# ==========================================
+# GROUND
+# ==========================================
+
+cube("Ground", (0, 0, -0.25), (100, 100, 0.5), soil)
+cube("Front paved approach", (0, -13, 0.02), (8, 12, 0.12), stone)
+
+# ==========================================
+# MAIN BUILDING
+# ==========================================
+
+W = 24
+D = 6
+front = -3
+base = 0.6
+floor_h = 3.2
+top = base + 3 * floor_h
+
+cube("Main building", (0, 0, (base+top)/2),
+     (W, D, top-base), cream)
+
+cube("Foundation", (0, 0, 0.45), (24.7, 6.5, 0.9), white)
+cube("Roof slab", (0, 0, top+0.12), (24.8, 6.5, 0.3), white)
+cube("Roof parapet", (0, front, top+0.38), (24.8, 0.2, 0.35), white)
+
+# Floor bands
+for f in range(4):
+    z = base + f*floor_h
+    cube("Front horizontal band", (0, front-0.1, z),
+         (24.5, 0.32, 0.22), white)
+
+# ==========================================
+# WINDOWS
+# ==========================================
+
+def window(x, z, width=1.0, height=1.45):
+    y = front - 0.12
+    cube("Window recess", (x, y+0.05, z),
+         (width+0.16, 0.12, height+0.15), dark)
+    cube("Blue window glass", (x, y-0.035, z),
+         (width, 0.045, height), glass)
+
+    t = 0.065
+    cube("Window left frame", (x-width/2-t/2, y-0.08, z),
+         (t, 0.09, height+0.12), white)
+    cube("Window right frame", (x+width/2+t/2, y-0.08, z),
+         (t, 0.09, height+0.12), white)
+    cube("Window top frame", (x, y-0.08, z+height/2),
+         (width+0.12, 0.09, t), white)
+    cube("Window bottom frame", (x, y-0.08, z-height/2),
+         (width+0.12, 0.09, t), white)
+    cube("Window middle vertical", (x, y-0.11, z),
+         (0.045, 0.05, height), white)
+    cube("Window middle horizontal", (x, y-0.11, z),
+         (width, 0.05, 0.045), white)
+
+for f in range(3):
+    z = base + f*floor_h + 1.8
+    for i in range(13):
+        x = -11 + i*1.83
+        window(x, z)
+
+# ==========================================
+# COLUMNS AND BALCONIES
+# ==========================================
+
+for f in range(3):
+    z0 = base + f*floor_h
+    z1 = z0 + floor_h
+
+    for i in range(13):
+        x = -12 + i*2
+
+        cube("White facade column",
+             (x, front-0.43, (z0+z1)/2),
+             (0.20, 0.27, floor_h-0.12), white, 0.025)
+
+        cube("Column capital", (x, front-0.43, z1-0.12),
+             (0.34, 0.35, 0.13), white)
+
+        cube("Column base", (x, front-0.43, z0+0.12),
+             (0.32, 0.34, 0.15), white)
+
+    # Balcony handrails
+    z = z1 - 0.1
+    y = front - 0.95
+
+    beam("Balcony top rail", (-12, y, z+0.8),
+         (12, y, z+0.8), 0.05, metal)
+    beam("Balcony lower rail", (-12, y, z+0.12),
+         (12, y, z+0.12), 0.035, metal)
+
+    for i in range(73):
+        x = -12 + i*(24/72)
+        beam("Balcony vertical baluster",
+             (x, y, z+0.12), (x, y, z+0.8),
+             0.022, metal)
+
+# ==========================================
+# CENTRAL ENTRANCE
+# ==========================================
+
+cube("Entrance recess", (0, front-0.15, 1.8),
+     (2.8, 0.18, 2.5), dark)
+
+cube("Left door", (-0.5, front-0.28, 1.5),
+     (0.95, 0.1, 2.0), cream)
+cube("Right door", (0.5, front-0.28, 1.5),
+     (0.95, 0.1, 2.0), cream)
+
+for x in [-1.05, 0, 1.05]:
+    cube("Door frame", (x, front-0.36, 1.5),
+         (0.10, 0.12, 2.15), white)
+
+cube("Door lintel", (0, front-0.36, 2.6),
+     (2.2, 0.12, 0.14), white)
+
+# ==========================================
+# CENTRAL RED STAIRCASE
+# ==========================================
+
+cube("Stair base", (0, -6.5, 0.20), (7, 7.5, 0.4), stone)
+
+steps = 17
+start_y = -10
+end_y = -3.2
+step_depth = (end_y-start_y)/steps
+
+for i in range(steps):
+    y = start_y + (i+0.5)*step_depth
+    z = 0.4 + i*0.15
+
+    cube("Stone staircase step", (0, y, z),
+         (6.5, step_depth+0.025, 0.18), stone, 0.02)
+
+    cube("Red center step", (0, y-0.015, z+0.10),
+         (2.35, step_depth*0.72, 0.035), red)
+
+    cube("Red stair edge", (0, y-step_depth*0.4, z+0.12),
+         (2.4, 0.04, 0.035), red2)
+
+# Side walls and railings
+for s in [-1, 1]:
+    beam("Stair side wall",
+         (s*3.25, -10, 0.3),
+         (s*3.25, -3.2, 2.8), 0.16, white)
+
+    beam("Stair handrail",
+         (s*3.15, -9.7, 0.9),
+         (s*3.15, -3.4, 3.1), 0.05, metal)
+
+# ==========================================
+# SIGNS
+# ==========================================
+
+cube("Library signboard", (0, front-0.65, 3.15),
+     (2.5, 0.12, 0.42), dark)
+text_object("LIBRARY ENTRANCE",
+            (0, front-0.72, 3.15), 0.16, white)
+
+cube("Waiting area signboard", (0, front-0.65, 6.35),
+     (3.5, 0.12, 0.42), dark)
+text_object("INTERVIEW WAITING AREA",
+            (0, front-0.72, 6.35), 0.15, white)
+
+cube("Lift signboard", (9, front-0.65, 6.35),
+     (2.5, 0.12, 0.42), dark)
+text_object("LIFT AND CORRIDOR",
+            (9, front-0.72, 6.35), 0.13, white)
+
+cube("Building name strip", (0, front-0.23, 1.0),
+     (20, 0.12, 0.32), white)
+text_object("INSTITUTIONAL LEARNING CENTRE",
+            (0, front-0.31, 1.0), 0.22, red)
+
+# ==========================================
+# GARDEN SHRUBS
+# ==========================================
+
+def shrub(x, y, size=1):
+    sphere("Bush", (x, y, 0.35*size),
+           (0.55*size, 0.45*size, 0.4*size), green)
+    for i in range(4):
+        a = i*math.pi/2
+        sphere("Bush leaf cluster",
+               (x+math.cos(a)*0.25*size,
+                y+math.sin(a)*0.22*size, 0.4*size),
+               (0.33*size, 0.30*size, 0.3*size),
+               green2 if i%2 else green)
+
+positions = [
+    (-10,-5), (-8,-4), (-6,-5), (-9,0), (-6,0),
+    (-4,-1), (4,-1), (6,0), (9,0), (6,-5),
+    (8,-4), (10,-5), (-11,-10), (-7,-11),
+    (-4,-11), (4,-11), (7,-11), (11,-10),
+    (-14,1), (14,1)
+]
+
+for x, y in positions:
+    shrub(x+random.uniform(-0.3,0.3),
+          y+random.uniform(-0.3,0.3),
+          random.uniform(0.7,1.2))
+
+# ==========================================
+# TREES
+# ==========================================
+
+def tree(x, y, h=7, spread=2):
+    trunk_h = h*0.55
+
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=10, radius=0.18, depth=trunk_h,
+        location=(x, y, trunk_h/2)
+    )
+    bpy.context.object.name = "Tree trunk"
+    bpy.context.object.data.materials.append(bark)
+
+    for i in range(4):
+        z = trunk_h + i*h*0.09
+        r = spread*(1-i*0.16)
+        sphere("Tree canopy", (x, y, z),
+               (r, r*0.85, h*0.18),
+               green2 if i%2 else green)
+
+tree(-15, -2, 8, 2.6)
+tree(15, -1, 8.5, 2.8)
+tree(-13, 3, 5.5, 1.8)
+tree(13, 4, 6, 1.8)
+
+# Tall ornamental evergreen
+bpy.ops.mesh.primitive_cylinder_add(
+    vertices=8, radius=0.12, depth=4.5,
+    location=(5.3, -3.5, 2.25)
+)
+bpy.context.object.data.materials.append(bark)
+
+for i in range(7):
+    z = 0.7+i*0.53
+    r = 0.9*(1-i/8)
+    bpy.ops.mesh.primitive_cone_add(
+        vertices=12, radius1=r, radius2=0.02,
+        depth=1.2, location=(5.3, -3.5, z)
+    )
+    bpy.context.object.name = "Ornamental evergreen"
+    bpy.context.object.data.materials.append(green)
+
+# ==========================================
+# LIGHTING
+# ==========================================
+
+world = bpy.data.worlds.new("Blue daylight") \
+    if not bpy.data.worlds else bpy.data.worlds[0]
+bpy.context.scene.world = world
+world.use_nodes = True
+world.node_tree.nodes["Background"].inputs["Color"].default_value = (
+    0.35, 0.55, 0.8, 1
+)
+world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.5
+
+bpy.ops.object.light_add(type='SUN', location=(0, -10, 18))
+sun = bpy.context.object
+sun.name = "Sunlight"
+sun.data.energy = 2.0
+sun.data.angle = math.radians(15)
+sun.rotation_euler = (
+    math.radians(25), math.radians(-20), math.radians(-25)
+)
+
+bpy.ops.object.light_add(type='AREA', location=(-7, -12, 12))
+fill = bpy.context.object
+fill.name = "Soft fill light"
+fill.data.energy = 1800
+fill.data.shape = 'DISK'
+fill.data.size = 12
+fill.rotation_euler = (
+    Vector((0, 0, 4))-fill.location
+).to_track_quat('-Z', 'Y').to_euler()
+
+# ==========================================
+# CAMERA
+# ==========================================
+
+bpy.ops.object.camera_add(location=(0, -36, 13))
+camera = bpy.context.object
+camera.name = "Building front camera"
+
+target = Vector((0, -1, 5))
+camera.rotation_euler = (
+    target-camera.location
+).to_track_quat('-Z', 'Y').to_euler()
+
+camera.data.lens = 35
+bpy.context.scene.camera = camera
+
+# ==========================================
+# RENDER SETTINGS
+# ==========================================
+
+scene = bpy.context.scene
+scene.render.engine = 'CYCLES'
+scene.cycles.samples = 32
+scene.cycles.use_denoising = True
+
+scene.render.resolution_x = 1600
+scene.render.resolution_y = 900
+scene.render.resolution_percentage = 100
+scene.render.image_settings.file_format = 'PNG'
+scene.render.filepath = "//college_building.png"
+
+scene.view_settings.view_transform = 'AgX'
+
+# Save camera as active selection
+bpy.ops.object.select_all(action='DESELECT')
+camera.select_set(True)
+bpy.context.view_layer.objects.active = camera
+
+# Save the Blender project
+bpy.ops.wm.save_as_mainfile(
+    filepath=bpy.path.abspath("//college_building.blend")
+)
+
+print("BUILDING CREATED SUCCESSFULLY")
+print("Press F12 to render the scene.")
