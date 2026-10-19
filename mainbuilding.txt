@@ -1,0 +1,382 @@
+
+import bpy
+import math
+import random
+from mathutils import Vector
+
+# ==========================================
+# INDIAN INSTITUTIONAL BUILDING
+# Procedural Blender model
+# ==========================================
+
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+random.seed(10)
+
+def material(name, color, roughness=0.8):
+    m = bpy.data.materials.new(name)
+    m.diffuse_color = (*color, 1)
+    m.use_nodes = True
+    m.node_tree.nodes["Principled BSDF"].inputs[
+        "Base Color"].default_value = (*color, 1)
+    m.node_tree.nodes["Principled BSDF"].inputs[
+        "Roughness"].default_value = roughness
+    return m
+
+pink = material("Pink sandstone", (0.65, 0.39, 0.34))
+lightpink = material("Light pink stone", (0.82, 0.63, 0.54))
+red = material("Red decorative panels", (0.55, 0.10, 0.085))
+cream = material("Cream concrete", (0.88, 0.83, 0.70))
+white = material("Ivory dome", (0.96, 0.93, 0.84))
+dark = material("Dark recesses", (0.065, 0.055, 0.045))
+glass = material("Blue window glass", (0.10, 0.21, 0.24), 0.25)
+concrete = material("Courtyard", (0.44, 0.40, 0.34))
+grass = material("Green lawn", (0.16, 0.29, 0.10))
+leaves = material("Tree foliage", (0.18, 0.34, 0.09))
+trunkmat = material("Tree trunk", (0.25, 0.14, 0.07))
+
+def cube(name, loc, size, mat, bevel=0):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.dimensions = size
+    bpy.ops.object.transform_apply(
+        location=False, rotation=False, scale=True)
+    o.data.materials.append(mat)
+    if bevel:
+        mod = o.modifiers.new("Soft edges", "BEVEL")
+        mod.width = bevel
+        mod.segments = 2
+        o.modifiers.new("Corner normals", "WEIGHTED_NORMAL")
+    return o
+
+def cylinder(name, loc, radius, depth, mat, vertices=16):
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=vertices, radius=radius,
+        depth=depth, location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.data.materials.append(mat)
+    return o
+
+def sphere(name, loc, scale, mat):
+    bpy.ops.mesh.primitive_uv_sphere_add(
+        segments=16, ring_count=12, location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.scale = scale
+    o.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    return o
+
+def beam(name, a, b, radius, mat):
+    a, b = Vector(a), Vector(b)
+    direction = b - a
+    o = cylinder(name, (a+b)/2, radius, direction.length, mat, 8)
+    o.rotation_mode = 'QUATERNION'
+    o.rotation_quaternion = direction.to_track_quat('Z', 'Y')
+    return o
+
+# Dome mesh
+def dome(name, cx, cy, base, radius, height, mat):
+    verts, faces = [], []
+    n, rings = 48, 24
+    for j in range(rings+1):
+        t = math.pi/2 * j/rings
+        r = radius * math.cos(t)
+        z = base + height * math.sin(t)
+        for i in range(n):
+            a = 2*math.pi*i/n
+            verts.append((cx+r*math.cos(a),
+                          cy+r*math.sin(a), z))
+    for j in range(rings):
+        for i in range(n):
+            a = j*n+i
+            b = j*n+(i+1)%n
+            c = (j+1)*n+(i+1)%n
+            d = (j+1)*n+i
+            faces.append((a,b,c,d))
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts, [], faces)
+    mesh.materials.append(mat)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    for p in mesh.polygons:
+        p.use_smooth = True
+    solid = obj.modifiers.new("Dome shell", "SOLIDIFY")
+    solid.thickness = 0.08
+    return obj
+
+# ==========================================
+# GROUND AND FOUNDATION
+# ==========================================
+
+cube("Ground", (0,0,-0.45), (35,25,0.7), grass)
+cube("Courtyard paving", (0,-7,-0.05), (28,10,0.12), concrete)
+cube("Building foundation", (0,0,0.25), (22,5.5,0.5), lightpink)
+
+# ==========================================
+# THREE-STOREY SIDE WINGS
+# ==========================================
+
+floor_z = [1.8, 4.45, 7.1]
+wing_centres = [-7.0, 7.0]
+
+for x in wing_centres:
+    cube("Side wing wall", (x,0,4.35), (7.5,3.6,7.7), pink)
+
+    # Floor slabs and roof bands
+    for z in [0.7,3.1,5.75,8.4]:
+        cube("Gallery floor", (x,-0.2,z),
+             (7.9,4.25,0.22), cream)
+        cube("Floor front fascia", (x,-2.27,z-0.05),
+             (7.9,0.13,0.25), lightpink)
+
+    cube("Roof coping", (x,0,8.55),
+         (7.9,4.0,0.20), cream)
+
+    # Three rows of corridor pillars
+    for z in floor_z:
+        for i in range(7):
+            px = x + (i-3)*1.12
+            cylinder("Column base", (px,-2.05,z-1.12),
+                     0.17,0.16,lightpink)
+            cylinder("Tall corridor column", (px,-2.05,z),
+                     0.095,2.2,cream,12)
+            cylinder("Column capital", (px,-2.05,z+1.1),
+                     0.15,0.12,cream)
+
+        # Balcony railings
+        rz = z-0.83
+        cube("Balcony lower rail", (x,-2.30,rz),
+             (7.5,0.12,0.12), cream)
+        cube("Balcony top rail", (x,-2.30,rz+0.73),
+             (7.5,0.12,0.12), cream)
+
+        for i in range(33):
+            px = x-3.75+i*7.5/32
+            cube("Railing vertical", (px,-2.30,rz+0.36),
+                 (0.045,0.09,0.65), cream)
+
+        # Decorative diagonal lattice
+        for i in range(32):
+            px = x-3.75+i*7.5/32
+            beam("Balustrade diagonal",
+                 (px,-2.36,rz+0.12),
+                 (px+0.11,-2.36,rz+0.60), 0.014, cream)
+            beam("Balustrade diagonal",
+                 (px,-2.36,rz+0.60),
+                 (px+0.11,-2.36,rz+0.12), 0.014, cream)
+
+        # Window bays behind the corridors
+        for i in range(6):
+            px = x+(i-2.5)*1.16
+            cube("Window recess", (px,-1.91,z-0.1),
+                 (0.78,0.08,1.45), dark)
+            cube("Window glass", (px,-1.97,z-0.1),
+                 (0.64,0.04,1.27), glass)
+
+            for dx in [-0.34,0.34]:
+                cube("Window frame", (px+dx,-2.01,z-0.1),
+                     (0.045,0.05,1.42), lightpink)
+            cube("Window crossbar", (px,-2.02,z-0.1),
+                 (0.65,0.04,0.045), cream)
+            cube("Window mullion", (px,-2.02,z-0.1),
+                 (0.04,0.04,1.28), cream)
+
+# ==========================================
+# CENTRAL MONUMENTAL TOWER
+# ==========================================
+
+cube("Central tower", (0,-0.2,5.15), (7.0,4.5,9.3), pink)
+
+# Tower base and upper cornices
+cube("Tower base band", (0,-0.25,0.8),
+     (7.35,4.85,0.25), lightpink)
+cube("Tower upper cornice", (0,-0.2,9.65),
+     (7.65,4.9,0.35), lightpink)
+cube("Tower cream cornice", (0,-0.2,9.94),
+     (8.0,5.1,0.24), cream)
+cube("Red roof band", (0,-0.2,10.14),
+     (7.6,4.8,0.16), red)
+
+# Red vertical facade insets
+for x in [-2.75,-1.85,1.85,2.75]:
+    for z,h in [(3.0,1.6),(5.3,1.5),(7.5,1.6)]:
+        cube("Red vertical inset", (x,-2.49,z),
+             (0.32,0.06,h), red)
+        for dx in [-0.10,0.10]:
+            cube("Inset detail", (x+dx,-2.53,z),
+                 (0.018,0.025,h*0.86), lightpink)
+
+# Stone pilasters
+for x in [-3.25,-2.25,2.25,3.25]:
+    cube("Tower pilaster", (x,-2.48,5.25),
+         (0.15,0.18,8.5), lightpink)
+
+# Emblem on the upper front wall
+cube("Emblem plaque", (0,-2.51,8.3),
+     (1.05,0.09,0.95), cream)
+cylinder("Emblem outer ring", (0,-2.57,8.3),
+         0.32,0.05,red,32)
+cylinder("Emblem centre", (0,-2.61,8.3),
+         0.21,0.05,glass,32)
+sphere("Emblem centre dot", (0,-2.65,8.3),
+       (0.10,0.025,0.10), red)
+
+# Recessed balconies
+for z,h,w in [(3.1,1.55,2.35),(5.5,1.75,2.4),(7.65,1.5,2.2)]:
+    cube("Dark balcony opening", (0,-2.49,z),
+         (w,0.07,h), dark)
+    for x in [-w/2,w/2]:
+        cube("Balcony side jamb", (x,-2.55,z),
+             (0.12,0.15,h+0.15), lightpink)
+    cube("Balcony lintel", (0,-2.56,z+h/2),
+         (w+0.18,0.18,0.13), cream)
+
+# Two projecting red balcony ledges
+for z,w in [(4.15,2.7),(6.42,2.55)]:
+    cube("Red balcony fascia", (0,-2.72,z),
+         (w,0.38,0.28), red)
+    cube("Balcony slab", (0,-2.76,z+0.17),
+         (w+0.18,0.58,0.11), cream)
+    for i in range(13):
+        x = -w/2+i*w/12
+        cube("Balcony decoration", (x,-2.96,z),
+             (0.045,0.025,0.17), lightpink)
+
+# Entrance doorway
+cube("Entrance shadow", (0,-2.51,1.75),
+     (1.7,0.08,2.5), dark)
+cube("Entrance door", (0,-2.57,1.55),
+     (1.25,0.06,1.95), glass)
+for x in [-1.0,1.0]:
+    cube("Entrance stone pier", (x,-2.56,1.9),
+         (0.18,0.25,2.7), cream)
+cube("Entrance lintel", (0,-2.56,3.27),
+     (2.25,0.28,0.18), cream)
+
+# Entrance steps
+for i in range(5):
+    cube("Entrance step", (0,-3.05-i*0.30,0.15+i*0.08),
+         (3.5+i*0.20,0.38,0.15+i*0.04), cream)
+
+# ==========================================
+# CUPOLA AND LARGE WHITE DOME
+# ==========================================
+
+cube("Cupola platform", (0,-0.2,10.43),
+     (6.0,4.6,0.25), cream)
+
+cylinder("Cupola octagonal base", (0,-0.2,10.72),
+         2.1,0.38,lightpink,8)
+cylinder("Cupola lower rim", (0,-0.2,10.95),
+         2.2,0.14,cream,8)
+
+# Open pavilion with eight slender columns
+for i in range(8):
+    a = 2*math.pi*i/8+math.pi/8
+    x = 1.88*math.cos(a)
+    y = -0.2+1.88*math.sin(a)
+    beam("Cupola column", (x,y,11.05),
+         (x,y,12.35), 0.075, cream)
+
+cylinder("Cupola roof rim", (0,-0.2,12.42),
+         2.15,0.20,cream,8)
+
+dome("Large ivory dome", 0,-0.2,12.48,2.03,2.0,white)
+
+cylinder("Dome bottom ring", (0,-0.2,12.52),
+         2.07,0.12,cream,32)
+cylinder("Finial base", (0,-0.2,14.45),
+         0.25,0.15,cream,20)
+
+bpy.ops.mesh.primitive_cone_add(
+    vertices=20, radius1=0.17, radius2=0.025,
+    depth=0.38, location=(0,-0.2,14.68))
+bpy.context.object.name = "Dome finial"
+bpy.context.object.data.materials.append(white)
+sphere("Finial tip", (0,-0.2,14.91),
+       (0.055,0.055,0.09), cream)
+
+# ==========================================
+# GARDEN
+# ==========================================
+
+def shrub(x,y,size):
+    for i in range(5):
+        ox = random.uniform(-0.25,0.25)*size
+        oy = random.uniform(-0.18,0.18)*size
+        r = random.uniform(0.20,0.36)*size
+        sphere("Garden shrub", (x+ox,y+oy,0.2+r*0.3),
+               (r*1.3,r,r*0.8), leaves)
+
+for side in [-1,1]:
+    for i in range(8):
+        shrub(side*(4.0+i*0.8),-3.25,0.8)
+
+def tree(x,y,height,radius):
+    cylinder("Tree trunk", (x,y,height*0.38),
+             0.14,height*0.76,trunkmat,10)
+    for i in range(9):
+        ox = random.uniform(-0.5,0.5)*radius
+        oy = random.uniform(-0.5,0.5)*radius
+        oz = random.uniform(-0.4,0.5)*radius
+        sphere("Tree foliage",
+               (x+ox,y+oy,height*0.75+oz),
+               (radius*0.65,radius*0.60,radius*0.75),
+               leaves)
+
+tree(-10.5,-0.4,5.7,1.3)
+tree(-11.0,2.2,5.0,1.0)
+tree(10.5,-0.4,5.6,1.0)
+tree(11.2,2.0,5.0,0.9)
+
+# ==========================================
+# LIGHTING AND CAMERA
+# ==========================================
+
+world = bpy.data.worlds.new("Daylight") if not bpy.data.worlds else bpy.data.worlds[0]
+bpy.context.scene.world = world
+world.use_nodes = True
+world.node_tree.nodes["Background"].inputs["Color"].default_value = (
+    0.32,0.46,0.68,1)
+world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.5
+
+bpy.ops.object.light_add(type='SUN', location=(0,-10,15))
+sun = bpy.context.object
+sun.name = "Sunlight"
+sun.data.energy = 2.0
+sun.rotation_euler = (math.radians(25),math.radians(-25),math.radians(-25))
+sun.data.angle = math.radians(15)
+
+bpy.ops.object.light_add(type='AREA', location=(-8,-12,10))
+area = bpy.context.object
+area.name = "Front fill light"
+area.data.energy = 1800
+area.data.shape = 'DISK'
+area.data.size = 10
+area.rotation_euler = (
+    Vector((0,0,5))-area.location).to_track_quat('-Z','Y').to_euler()
+
+bpy.ops.object.camera_add(location=(14,-29,12))
+cam = bpy.context.object
+cam.name = "Building camera"
+target = Vector((0,-0.2,6.5))
+cam.rotation_euler = (
+    target-cam.location).to_track_quat('-Z','Y').to_euler()
+cam.data.lens = 43
+
+scene = bpy.context.scene
+scene.camera = cam
+scene.render.engine = 'CYCLES'
+scene.cycles.samples = 32
+scene.render.resolution_x = 1400
+scene.render.resolution_y = 1050
+scene.render.resolution_percentage = 100
+scene.render.image_settings.file_format = 'PNG'
+scene.render.filepath = "//building_render.png"
+scene.view_settings.view_transform = 'AgX'
+
+print("BUILDING CREATED SUCCESSFULLY!")
+print("Press F12 to render.")
