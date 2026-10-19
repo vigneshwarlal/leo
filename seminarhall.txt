@@ -1,0 +1,388 @@
+
+import bpy
+import math
+import random
+
+from mathutils import Vector
+
+# =====================================================
+# SEMINAR HALL - COMPLETE PROCEDURAL BLENDER SCRIPT
+# Compatible with Blender 3.6 and Blender 4.x
+# =====================================================
+
+random.seed(10)
+
+# 1. CLEAR SCENE
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
+# 2. MATERIALS
+def material(name, color, roughness=0.7, metallic=0):
+    m = bpy.data.materials.new(name)
+    m.diffuse_color = (*color, 1)
+    m.use_nodes = True
+    bs = m.node_tree.nodes.get("Principled BSDF")
+    bs.inputs["Base Color"].default_value = (*color, 1)
+    bs.inputs["Roughness"].default_value = roughness
+    bs.inputs["Metallic"].default_value = metallic
+    return m
+
+floor = material("Coral red floor", (0.68, 0.22, 0.18))
+wall = material("Warm white walls", (0.85, 0.83, 0.80))
+ceiling = material("Pink ceiling", (0.75, 0.62, 0.63))
+black = material("Black chair plastic", (0.035, 0.045, 0.05))
+metal = material("Dark metal", (0.10, 0.11, 0.12), 0.3, 0.5)
+wood = material("Wooden desks", (0.57, 0.36, 0.19))
+red = material("Red curtains", (0.48, 0.035, 0.045))
+cream = material("Cream curtains", (0.90, 0.81, 0.70))
+white = material("Whiteboard", (0.94, 0.94, 0.91), 0.25)
+glass = material("Window glass", (0.40, 0.65, 0.72), 0.2)
+lightmat = material("Ceiling light", (1.0, 0.92, 0.75))
+screen = material("Monitor screen", (0.015, 0.025, 0.04), 0.2)
+purple = material("Purple flowers", (0.55, 0.10, 0.65))
+pink = material("Pink flowers", (0.95, 0.22, 0.42))
+green = material("Leaves", (0.10, 0.32, 0.10))
+
+# 3. GEOMETRY HELPERS
+def cube(name, loc, size, mat, bevel=0):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.dimensions = size
+    bpy.ops.object.transform_apply(
+        location=False, rotation=False, scale=True
+    )
+    if mat:
+        o.data.materials.append(mat)
+    if bevel:
+        mod = o.modifiers.new("Rounded edges", "BEVEL")
+        mod.width = bevel
+        mod.segments = 2
+        o.modifiers.new("Weighted normals", "WEIGHTED_NORMAL")
+    return o
+
+def cylinder(name, loc, radius, depth, mat, vertices=16):
+    bpy.ops.mesh.primitive_cylinder_add(
+        vertices=vertices, radius=radius, depth=depth,
+        location=loc
+    )
+    o = bpy.context.object
+    o.name = name
+    if mat:
+        o.data.materials.append(mat)
+    return o
+
+def beam(name, a, b, radius, mat):
+    a, b = Vector(a), Vector(b)
+    d = b - a
+    o = cylinder(name, (a+b)/2, radius, d.length, mat, 10)
+    o.rotation_mode = 'QUATERNION'
+    o.rotation_quaternion = d.to_track_quat('Z', 'Y')
+    return o
+
+def sphere(name, loc, scale, mat):
+    bpy.ops.mesh.primitive_uv_sphere_add(
+        segments=12, ring_count=8, location=loc
+    )
+    o = bpy.context.object
+    o.name = name
+    o.scale = scale
+    o.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    return o
+
+# 4. ROOM
+W, D, H = 12, 11, 3.6
+
+cube("Red floor", (0, 0, -0.12), (W, D, 0.24), floor)
+cube("Front wall", (0, -D/2, H/2), (W, .18, H), wall)
+cube("Back wall", (0, D/2, H/2), (W, .18, H), wall)
+cube("Left wall", (-W/2, 0, H/2), (.18, D, H), wall)
+cube("Right wall", (W/2, 0, H/2), (.18, D, H), wall)
+cube("Ceiling", (0, 0, H+.10), (W, D, .20), ceiling)
+
+# 5. WINDOWS AND RED/WHITE CURTAINS
+def window(side, y):
+    x = side * 5.91
+    z = 2.15
+    ww, hh = 1.45, 1.45
+
+    cube("Window glass", (x, y, z), (.045, ww, hh), glass)
+
+    for yy in [y-ww/2, y+ww/2]:
+        cube("Window frame", (x+side*.035, yy, z),
+             (.07, .05, hh+.08), white)
+
+    for zz in [z-hh/2, z+hh/2]:
+        cube("Window frame", (x+side*.035, y, zz),
+             (.07, ww+.08, .05), white)
+
+    for offset, mat in [
+        (-ww*.62, red), (-ww*.46, cream),
+        (ww*.46, cream), (ww*.62, red)
+    ]:
+        cube("Curtain", (x-side*.09, y+offset, z),
+             (.08, ww*.16, hh+.20), mat, .02)
+
+    beam("Curtain rod",
+         (x-side*.09, y-ww*.82, 3.10),
+         (x-side*.09, y+ww*.82, 3.10),
+         .025, metal)
+
+for s in [-1, 1]:
+    for y in [-3.6, -1.0, 1.6, 3.8]:
+        window(s, y)
+
+# 6. AIR CONDITIONERS
+def aircon(side, y):
+    x = side*5.75
+    cube("Wall air conditioner", (x, y, 3.08),
+         (.32, 1.5, .35), cream, .06)
+    cube("AC air outlet", (x-side*.17, y, 2.94),
+         (.025, 1.1, .05), metal)
+
+aircon(-1, -3.5)
+aircon(1, -3.5)
+aircon(1, 2.6)
+
+# 7. WHITEBOARD
+cube("Whiteboard frame", (-1.3, -5.32, 1.9),
+     (2.05, .12, 1.15), metal, .025)
+cube("Whiteboard surface", (-1.3, -5.395, 1.9),
+     (1.92, .025, 1.02), white)
+
+for x in [-2.05, -.55]:
+    beam("Whiteboard stand", (x, -5.30, .15),
+         (x, -5.30, 1.35), .035, metal)
+    beam("Whiteboard foot", (x-.2, -5.30, .14),
+         (x+.2, -5.30, .14), .035, metal)
+
+# 8. TEACHER'S DESK AND COMPUTERS
+cube("Teacher desk", (-3.55, -4.25, .95),
+     (2.35, .9, .13), wood, .035)
+
+for x in [-4.48, -2.62]:
+    cube("Desk side support", (x, -4.25, .48),
+         (.12, .75, .90), deskmat if False else black)
+
+cube("Desk front panel", (-3.55, -3.86, .57),
+     (1.85, .08, .55), black)
+
+for x in [-4.15, -3.5, -2.85]:
+    cube("Monitor base", (x, -4.25, 1.04),
+         (.25, .16, .035), metal)
+    beam("Monitor stand", (x, -4.25, 1.06),
+         (x, -4.25, 1.20), .025, metal)
+    cube("Computer monitor", (x, -4.25, 1.36),
+         (.52, .12, .36), black, .02)
+    cube("Monitor display", (x, -4.318, 1.36),
+         (.45, .012, .28), screen)
+
+cube("Keyboard", (-3.5, -3.92, 1.035),
+     (.62, .22, .025), black)
+
+# 9. CLASSROOM CHAIRS WITH WRITING TABLETS
+def chair(x, y, number):
+    # Seat
+    cube(f"Chair {number} seat", (x, y, .49),
+         (.51, .46, .10), black, .04)
+
+    # Backrest
+    cube(f"Chair {number} back", (x, y+.19, .91),
+         (.51, .10, .68), black, .05)
+
+    # Metal legs
+    for dx in [-.19, .19]:
+        for dy in [-.16, .16]:
+            beam("Chair metal leg",
+                 (x+dx, y+dy, .10),
+                 (x+dx*.9, y+dy*.85, .45),
+                 .023, metal)
+
+    # Back support
+    for dx in [-.18, .18]:
+        beam("Back support", (x+dx, y+.17, .45),
+             (x+dx, y+.19, 1.16), .019, metal)
+
+    # Wooden writing tablet
+    tx, ty = x+.34, y-.02
+    cube(f"Chair {number} writing tablet",
+         (tx, ty, .82), (.47, .38, .06), wood, .025)
+
+    beam("Tablet support", (x+.21, y+.02, .47),
+         (tx+.1, ty, .79), .022, metal)
+
+# Six rows of nine chairs
+rows, cols = 6, 9
+for r in range(rows):
+    y = -2.55 + r*1.10
+    for c in range(cols):
+        x = (c-(cols-1)/2)*1.08
+        if x > 0:
+            x += .22
+        x += random.uniform(-.025, .025)
+        chair(x, y+random.uniform(-.02, .02), r*cols+c+1)
+
+# 10. CEILING LIGHT PANELS
+for x in [-4.2, -1.4, 1.4, 4.2]:
+    for y in [-3.5, -.2, 3.1]:
+        cube("LED ceiling panel", (x, y, 3.56),
+             (.95, .46, .05), lightmat, .02)
+
+# 11. CEILING FANS
+def fan(x, y):
+    z = 3.32
+    cylinder("Fan motor", (x, y, z), .14, .20, metal)
+    cylinder("Fan hub", (x, y, z-.13), .10, .08, metal)
+
+    for i in range(3):
+        angle = math.tau*i/3
+        b = cube("Fan blade",
+                 (x+math.cos(angle)*.55,
+                  y+math.sin(angle)*.55, z-.15),
+                 (1.0, .15, .035), metal, .025)
+        b.rotation_euler[2] = angle
+
+for x, y in [(-3, -.4), (0, .8), (3, 1.6)]:
+    fan(x, y)
+
+# 12. CEILING PROJECTOR
+beam("Projector suspension", (.4, -.4, 3.55),
+     (.4, -.4, 2.95), .03, metal)
+
+cube("Projector", (.4, -.4, 2.80),
+     (.55, .45, .25), white, .05)
+
+cube("Projector lens", (.4, -.64, 2.80),
+     (.15, .025, .12), black)
+
+# 13. WALL CLOCK ON LEFT WALL
+clock = cylinder("Clock body", (-5.78, -2.3, 2.5),
+                 .35, .09, red, 48)
+clock.rotation_euler[1] = math.pi/2
+
+face = cylinder("Clock face", (-5.72, -2.3, 2.5),
+                .30, .025, white, 48)
+face.rotation_euler[1] = math.pi/2
+
+for i in range(12):
+    a = math.tau*i/12
+    yy = -2.3 + math.sin(a)*.245
+    zz = 2.5 + math.cos(a)*.245
+    cube("Clock marker", (-5.70, yy, zz),
+         (.018, .025, .04), black)
+
+beam("Clock minute hand", (-5.68, -2.3, 2.5),
+     (-5.68, -2.18, 2.61), .012, black)
+beam("Clock hour hand", (-5.67, -2.3, 2.5),
+     (-5.67, -2.39, 2.55), .016, black)
+
+# 14. WALL POSTERS
+def poster(x, z, w, h):
+    cube("Poster frame", (x, -5.36, z),
+         (w+.08, .07, h+.08), metal)
+    cube("Poster paper", (x, -5.405, z),
+         (w, .02, h), white)
+
+    for i in range(6):
+        cube("Poster printed line",
+             (x, -5.42, z+h*.28-i*h*.10),
+             (w*random.uniform(.45, .85), .008, .015),
+             metal)
+
+poster(-4.6, 2.15, .8, 1.05)
+poster(4.15, 2.2, 1.25, 1.4)
+
+# 15. FLOWER TABLE
+cube("Flower table top", (4.1, 2.85, .78),
+     (2.25, .9, .12), wood, .04)
+
+for x in [3.25, 4.95]:
+    for y in [2.55, 3.15]:
+        beam("Table leg", (x, y, .12),
+             (x, y, .73), .04, metal)
+
+cylinder("Flower pot", (4.1, 2.85, .94),
+         .15, .24, red)
+
+for i in range(13):
+    a = random.uniform(0, math.tau)
+    radius = random.uniform(.03, .25)
+    fx = 4.1 + math.cos(a)*radius
+    fy = 2.85 + math.sin(a)*radius
+    fz = random.uniform(1.18, 1.48)
+    col = purple if i%2 == 0 else pink
+
+    beam("Flower stem", (4.1, 2.85, 1.02),
+         (fx, fy, fz), .012, green)
+
+    sphere("Flower center", (fx, fy, fz),
+           (.045, .045, .045), col)
+
+    for j in range(5):
+        pa = math.tau*j/5
+        sphere("Flower petal",
+               (fx+math.cos(pa)*.06,
+                fy+math.sin(pa)*.06, fz),
+               (.04, .03, .025), col)
+
+# 16. LIGHTING
+def area_light(name, loc, power, size):
+    bpy.ops.object.light_add(type='AREA', location=loc)
+    l = bpy.context.object
+    l.name = name
+    l.data.energy = power
+    l.data.shape = 'DISK'
+    l.data.size = size
+    l.rotation_euler = (0, 0, 0)
+    direction = Vector((0, 0, 1.0))-l.location
+    l.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+
+area_light("Main soft illumination", (0, 0, 3.35), 1600, 8)
+area_light("Front fill", (-3, -2, 3), 450, 5)
+area_light("Rear fill", (4, 2, 3), 450, 4)
+
+world = bpy.data.worlds.new("Seminar Hall World") if not bpy.data.worlds else bpy.data.worlds[0]
+bpy.context.scene.world = world
+world.use_nodes = True
+world.node_tree.nodes["Background"].inputs["Color"].default_value = (.48, .48, .48, 1)
+world.node_tree.nodes["Background"].inputs["Strength"].default_value = .4
+
+# 17. CAMERA
+bpy.ops.object.camera_add(location=(0, 4.7, 2.35))
+cam = bpy.context.object
+cam.name = "Seminar hall camera"
+
+target = Vector((0, -3.7, 1.65))
+direction = target - cam.location
+cam.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
+cam.data.lens = 17
+cam.data.clip_end = 200
+
+scene = bpy.context.scene
+scene.camera = cam
+
+# 18. RENDER SETTINGS
+scene.render.engine = 'CYCLES'
+scene.cycles.samples = 32
+scene.render.resolution_x = 1600
+scene.render.resolution_y = 900
+scene.render.resolution_percentage = 100
+scene.render.image_settings.file_format = 'PNG'
+scene.render.filepath = "//seminar_hall_render.png"
+
+scene.view_settings.view_transform = 'AgX'
+scene.view_settings.look = 'AgX - Medium High Contrast'
+
+# 19. SAVE BLENDER FILE AND RENDER
+bpy.ops.object.select_all(action='DESELECT')
+cam.select_set(True)
+bpy.context.view_layer.objects.active = cam
+
+bpy.ops.wm.save_as_mainfile(filepath="//seminar_hall.blend")
+
+print("Seminar hall created!")
+print("Project: seminar_hall.blend")
+print("Render: seminar_hall_render.png")
+
+bpy.ops.render.render(write_still=True)
