@@ -1,0 +1,113 @@
+
+import bpy
+
+# Clear scene
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
+# Materials
+def mat(name, color):
+    m = bpy.data.materials.new(name)
+    m.diffuse_color = (*color, 1)
+    return m
+
+orange = mat("Orange", (0.8, 0.12, 0.03))
+black = mat("Black", (0.03, 0.03, 0.03))
+wood = mat("Wood", (0.35, 0.14, 0.04))
+cream = mat("Cream", (0.85, 0.75, 0.58))
+floor_mat = mat("Floor", (0.65, 0.62, 0.55))
+
+def cube(name, loc, scale, material):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.dimensions = scale
+    bpy.ops.object.transform_apply(
+        location=False, rotation=False, scale=True)
+    o.data.materials.append(material)
+    bevel = o.modifiers.new("Rounded edges", 'BEVEL')
+    bevel.width = 0.06
+    bevel.segments = 2
+    return o
+
+# Floor
+cube("Floor", (0, 2, -0.25), (20, 28, 0.5), floor_mat)
+
+# Stage
+cube("Stage Base", (0, -10, 0.4), (12, 3, 0.8), wood)
+cube("Stage Top", (0, -10, 0.85), (12, 3, 0.12), cream)
+
+# Podium
+cube("Podium Stand", (-4, -10, 1.35), (0.6, 0.6, 0.9), wood)
+cube("Podium Top", (-4, -10, 1.85), (0.9, 0.7, 0.12), wood)
+
+# Central staircase
+for i in range(4):
+    cube("Stage Step", (0, -8+i*0.45, 0.12+i*0.18),
+         (2.5, 0.6, 0.24+i*0.01), cream)
+
+# Create one chair using simple cubes
+def chair(x, y, z):
+    # Seat cushion
+    cube("Orange Seat", (x, y, z+0.55),
+         (0.85, 0.75, 0.22), orange)
+
+    # Chair back
+    cube("Orange Backrest", (x, y+0.30, z+1.05),
+         (0.85, 0.22, 0.95), orange)
+
+    # Four supports
+    for dx in [-0.3, 0.3]:
+        cube("Chair Leg", (x+dx, y-0.2, z+0.25),
+             (0.07, 0.07, 0.5), black)
+        cube("Chair Leg", (x+dx, y+0.22, z+0.25),
+             (0.07, 0.07, 0.5), black)
+
+    # Armrests
+    for dx in [-0.48, 0.48]:
+        cube("Armrest", (x+dx, y, z+0.82),
+             (0.14, 0.65, 0.10), black)
+
+# Rows of chairs with a central aisle
+for row in range(9):
+    y = -6.5 + row*1.25
+    z = row*0.16
+
+    for side in [-1, 1]:
+        for col in range(4):
+            x = side*(1.7 + col*1.05)
+            chair(x, y, z)
+
+    # Central aisle steps
+    cube("Aisle Step", (0, y, z),
+         (1.5, 1.0, 0.12), cream)
+
+# Back wall
+cube("Back Wall", (0, 5.5, 4), (20, 0.3, 8), cream)
+
+# Camera
+bpy.ops.object.camera_add(location=(0, 15, 8))
+camera = bpy.context.object
+camera.rotation_euler = (
+    __import__('mathutils').Vector((0, -3, 2.5))
+    - camera.location
+).to_track_quat('-Z', 'Y').to_euler()
+camera.data.lens = 28
+bpy.context.scene.camera = camera
+
+# Lighting
+bpy.ops.object.light_add(type='AREA', location=(0, 2, 10))
+light = bpy.context.object
+light.data.energy = 1800
+light.data.shape = 'DISK'
+light.data.size = 10
+
+# Render
+scene = bpy.context.scene
+scene.render.engine = 'CYCLES'
+scene.cycles.samples = 24
+scene.render.resolution_x = 1200
+scene.render.resolution_y = 800
+scene.render.resolution_percentage = 100
+
+print("Simple auditorium created. Press F12 to render.")
